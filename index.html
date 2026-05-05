@@ -369,10 +369,16 @@ function parseCSV(text) {
   const buIdx   = headers.findIndex(h => h.toLowerCase().includes('business unit'));
   const dateIdx = headers.findIndex(h => h.toLowerCase().includes('scheduled date'));
   const statIdx = headers.findIndex(h => h.toLowerCase() === 'status');
+  const typeIdx = headers.findIndex(h => h.toLowerCase().includes('job type'));
   if (buIdx < 0 || dateIdx < 0) return [];
   return lines.slice(1).map(line => {
     const c = parseRow(line);
-    return { bu:(c[buIdx]||'').trim(), date:(c[dateIdx]||'').trim(), status:(c[statIdx]||'').trim() };
+    return {
+      bu:      (c[buIdx]  ||'').trim(),
+      date:    (c[dateIdx]||'').trim(),
+      status:  (c[statIdx]||'').trim(),
+      jobType: (typeIdx >= 0 ? c[typeIdx]||'' : '').trim(),
+    };
   }).filter(r => r.bu && r.date);
 }
 
@@ -388,12 +394,23 @@ function parseRow(line) {
 }
 
 // ── COUNT JOBS ──
+// Maintenance 1-3 = 1 slot, Maintenance 4-5 = 2 slots
+function getSlots(jobType) {
+  const match = jobType.match(/Maintenance\s*-\s*(\d+)/i);
+  if (!match) return 1;
+  const num = parseInt(match[1]);
+  if (num >= 4) return 2;
+  return 1;
+}
+
 function countJobs(dateStr, buSheet) {
-  return jobData.filter(j =>
-    j.bu === buSheet &&
-    normalizeDate(j.date) === dateStr &&
-    j.status.toLowerCase() === 'scheduled'
-  ).length;
+  return jobData
+    .filter(j =>
+      j.bu === buSheet &&
+      normalizeDate(j.date) === dateStr &&
+      j.status.toLowerCase() === 'scheduled'
+    )
+    .reduce((total, j) => total + getSlots(j.jobType || ''), 0);
 }
 
 // ── DEMO DATA ──
