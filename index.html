@@ -117,9 +117,25 @@
   .c-red { color: var(--red); }
   .c-orange { color: var(--orange); }
 
+
+  /* LOADING */
+  #loadingScreen{position:fixed;inset:0;z-index:999;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;transition:opacity .5s ease}
+  #loadingScreen.hidden{opacity:0;pointer-events:none}
+  .load-logo{width:56px;height:56px;background:var(--orange);border-radius:10px;display:flex;align-items:center;justify-content:center;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:22px;color:white;animation:ldpulse 1.4s ease-in-out infinite}
+  @keyframes ldpulse{0%,100%{opacity:1}50%{opacity:.35}}
+  .load-label{font-family:'Barlow Condensed',sans-serif;font-size:15px;letter-spacing:.15em;color:var(--text2);text-transform:uppercase}
+  .load-bar-wrap{width:220px;height:3px;background:var(--surface2);border-radius:2px;overflow:hidden}
+  .load-bar{height:100%;width:0%;background:var(--orange);border-radius:2px;animation:ldbar 2.5s ease forwards}
+  @keyframes ldbar{to{width:100%}}
 </style>
 </head>
 <body>
+
+<div id="loadingScreen">
+  <div class="load-logo">JS</div>
+  <div class="load-label">Loading Call Board&hellip;</div>
+  <div class="load-bar-wrap"><div class="load-bar"></div></div>
+</div>
 </div>
 
 <header>
@@ -196,7 +212,12 @@ let saveTimers = {};
 // ── INIT ──
 window.addEventListener('DOMContentLoaded', () => {
   scriptUrl = APPS_SCRIPT_URL;
-  loadAll();
+  loadAll().catch(e => {
+    console.error('Init failed:', e);
+    loadDemoData();
+    const ls = document.getElementById('loadingScreen');
+    if (ls) ls.classList.add('hidden');
+  });
   setInterval(loadAll, 30 * 60 * 1000);
 });
 
@@ -213,31 +234,46 @@ async function loadAll() {
     jobData = jobs;
     goals   = goalsData;
     document.getElementById('demoNotice').style.display = 'none';
-    const goalsSrc = scriptUrl ? 'Goals synced to sheet' : 'Connect Apps Script to sync goals';
+    const goalsSrc = scriptUrl ? 'Goals synced' : 'Goals local only';
     setStatus('green', `Live — ${jobData.length} scheduled jobs loaded. ${goalsSrc}.`);
     document.getElementById('lastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString();
     renderBoard();
     document.getElementById('summaryBar').style.display = 'flex';
   } catch (err) {
-    setStatus('red', 'Could not reach Apps Script. Check URL and deployment. ' + err.message);
+    console.error('loadAll error:', err);
+    setStatus('red', 'Data load failed — using demo data. ' + err.message);
     if (jobData.length === 0) loadDemoData();
     else renderBoard();
   } finally {
     document.getElementById('refreshBtn').classList.remove('loading');
+    // Always hide loading screen
+    const ls = document.getElementById('loadingScreen');
+    if (ls) ls.classList.add('hidden');
   }
 }
 
+async function getCSV(url) {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    const r = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+    if (r.ok) { const t = await r.text(); if (!t.trim().startsWith('<')) return t; }
+  } catch(e) {}
+  // CORS proxy fallback (same as other Jackson Services dashboards)
+  const proxy = 'https://corsproxy.io/?' + encodeURIComponent(url);
+  const r2 = await fetch(proxy);
+  return r2.text();
+}
+
 async function fetchJobs() {
-  const resp = await fetch(DEFAULT_CSV_URL + '&cacheBust=' + Date.now());
-  if (!resp.ok) throw new Error('HTTP ' + resp.status);
-  const text = await resp.text();
+  const text = await getCSV(DEFAULT_CSV_URL);
   return parseCSV(text);
 }
 
 async function fetchGoals() {
-  const resp = await fetch(scriptUrl + '?action=goals&cacheBust=' + Date.now());
-  if (!resp.ok) throw new Error('HTTP ' + resp.status);
-  return await resp.json();
+  const text = await getCSV(scriptUrl + '?action=goals&cacheBust=' + Date.now());
+  try { return JSON.parse(text); } catch(e) { return {}; }
 }
 
 // ── SAVE GOAL TO SHEET ──
