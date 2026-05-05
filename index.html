@@ -212,6 +212,19 @@ let saveTimers = {};
 // ── INIT ──
 window.addEventListener('DOMContentLoaded', () => {
   scriptUrl = APPS_SCRIPT_URL;
+
+  // Load localStorage backup first — gives us a baseline before sheet loads
+  // This means goals can NEVER be lost just because the sheet returns empty
+  try {
+    const backup = localStorage.getItem('jcs_goals_backup');
+    if (backup) {
+      const parsed = JSON.parse(backup);
+      if (parsed && typeof parsed === 'object') {
+        goals = parsed;
+      }
+    }
+  } catch(e) {}
+
   (async () => {
     try {
       await loadAll();
@@ -219,7 +232,6 @@ window.addEventListener('DOMContentLoaded', () => {
       console.error('Init failed:', e);
       loadDemoData();
     } finally {
-      // ALWAYS dismiss loading screen no matter what
       const ls = document.getElementById('loadingScreen');
       if (ls) ls.classList.add('hidden');
     }
@@ -235,10 +247,19 @@ async function loadAll() {
   document.getElementById('refreshBtn').classList.add('loading');
   try {
     const jobsPromise = fetchJobs();
-    const goalsPromise = scriptUrl ? fetchGoals() : Promise.resolve(goals);
+    const goalsPromise = scriptUrl ? fetchGoals() : Promise.resolve(null);
     const [jobs, goalsData] = await Promise.all([jobsPromise, goalsPromise]);
     jobData = jobs;
-    goals   = goalsData;
+    // Merge sheet goals into existing goals — never wipe what's already there
+    // Sheet values take precedence, but existing in-memory values survive if sheet has nothing
+    if (goalsData && Object.keys(goalsData).length > 0) {
+      for (const [date, buMap] of Object.entries(goalsData)) {
+        if (!goals[date]) goals[date] = {};
+        for (const [bu, val] of Object.entries(buMap)) {
+          goals[date][bu] = val;
+        }
+      }
+    }
     document.getElementById('demoNotice').style.display = 'none';
     const goalsSrc = scriptUrl ? 'Goals synced' : 'Goals local only';
     setStatus('green', `Live — ${jobData.length} scheduled jobs loaded. ${goalsSrc}.`);
@@ -278,10 +299,10 @@ async function fetchJobs() {
 }
 
 async function fetchGoals() {
-  try {
-    const text = await fetchScript(scriptUrl + '?action=goals&cacheBust=' + Date.now());
-    return JSON.parse(text);
-  } catch(e) { return {}; }
+  const text = await fetchScript(scriptUrl + '?action=goals&cacheBust=' + Date.now());
+  const parsed = JSON.parse(text);
+  // Must be a real object with keys, not an empty response
+  return (parsed && typeof parsed === 'object') ? parsed : null;
 }
 
 // ── SAVE GOAL TO SHEET ──
@@ -332,7 +353,10 @@ function updateGoal(dateStr, buKey, value) {
   if (!goals[dateStr]) goals[dateStr] = {};
   goals[dateStr][buKey] = parseInt(value) || 0;
 
-  // Debounce: wait 800ms after last keystroke before saving
+  // Always persist to localStorage immediately as backup
+  try { localStorage.setItem('jcs_goals_backup', JSON.stringify(goals)); } catch(e) {}
+
+  // Debounce: wait 800ms after last keystroke before saving to sheet
   const timerKey = dateStr + '_' + buKey;
   clearTimeout(saveTimers[timerKey]);
   saveTimers[timerKey] = setTimeout(() => {
