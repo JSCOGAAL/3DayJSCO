@@ -212,12 +212,18 @@ let saveTimers = {};
 // ── INIT ──
 window.addEventListener('DOMContentLoaded', () => {
   scriptUrl = APPS_SCRIPT_URL;
-  loadAll().catch(e => {
-    console.error('Init failed:', e);
-    loadDemoData();
-    const ls = document.getElementById('loadingScreen');
-    if (ls) ls.classList.add('hidden');
-  });
+  (async () => {
+    try {
+      await loadAll();
+    } catch(e) {
+      console.error('Init failed:', e);
+      loadDemoData();
+    } finally {
+      // ALWAYS dismiss loading screen no matter what
+      const ls = document.getElementById('loadingScreen');
+      if (ls) ls.classList.add('hidden');
+    }
+  })();
   setInterval(loadAll, 30 * 60 * 1000);
 });
 
@@ -246,37 +252,36 @@ async function loadAll() {
     else renderBoard();
   } finally {
     document.getElementById('refreshBtn').classList.remove('loading');
-    // Always hide loading screen
     const ls = document.getElementById('loadingScreen');
     if (ls) ls.classList.add('hidden');
   }
 }
 
-async function getCSV(url) {
-  // Try direct fetch first
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
-    const r = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeout);
-    if (r.ok) { const t = await r.text(); if (!t.trim().startsWith('<') && !t.includes('"error"')) return t; }
-  } catch(e) {}
-  // Reliable CORS proxy fallback
+// Fetch from Apps Script (handles redirects, no proxy needed)
+async function fetchScript(url) {
+  const r = await fetch(url, { redirect: 'follow' });
+  if (!r.ok) throw new Error('Script HTTP ' + r.status);
+  return r.text();
+}
+
+// Fetch CSV via proxy (for published Google Sheets)
+async function fetchCSV(url) {
   const proxy = 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url);
-  const r2 = await fetch(proxy);
-  if (!r2.ok) throw new Error('Proxy failed: HTTP ' + r2.status);
-  return r2.text();
+  const r = await fetch(proxy);
+  if (!r.ok) throw new Error('Proxy HTTP ' + r.status);
+  return r.text();
 }
 
 async function fetchJobs() {
-  // Apps Script serves job data directly — no CORS issues
-  const text = await getCSV(APPS_SCRIPT_URL + '?cacheBust=' + Date.now());
+  const text = await fetchScript(APPS_SCRIPT_URL + '?cacheBust=' + Date.now());
   return parseCSV(text);
 }
 
 async function fetchGoals() {
-  const text = await getCSV(scriptUrl + '?action=goals&cacheBust=' + Date.now());
-  try { return JSON.parse(text); } catch(e) { return {}; }
+  try {
+    const text = await fetchScript(scriptUrl + '?action=goals&cacheBust=' + Date.now());
+    return JSON.parse(text);
+  } catch(e) { return {}; }
 }
 
 // ── SAVE GOAL TO SHEET ──
