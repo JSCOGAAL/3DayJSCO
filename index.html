@@ -170,7 +170,7 @@ header h1{font-family:'Barlow Condensed',sans-serif;font-size:22px;font-weight:7
 
   <div class="leg-section">
     <div class="leg-title">&#128200; Gauge &amp; Status</div>
-    <p class="leg-body">Shows how full the board is for that day. <span class="leg-green">Goal Met</span> means capacity is filled. <span class="leg-yellow">Close</span> means 70–99%. <span class="leg-orange">Membership Capacity</span> means under 70% — more visits need to be booked.</p>
+    <p class="leg-body">Shows how full the board is for that day. <span class="leg-green">Goal Met</span> means capacity is filled. <span class="leg-yellow">Close</span> means 70–99%. <span class="leg-orange">Memberships Booked</span> means under 70% — more visits need to be booked.</p>
   </div>
 
   <div class="leg-section">
@@ -528,7 +528,7 @@ function renderBoard() {
       if (pct >= 100) daysOnTrack++;
 
       const sClass  = pct>=100?'met':pct>=70?'close':'behind';
-      const sLabel  = pct>=100?'Goal Met':pct>=70?'Close':'Membership Capacity';
+      const sLabel  = pct>=100?'Goal Met':pct>=70?'Close':'Memberships Booked';
       const pctCol  = pct>=100?'c-green':pct>=70?'c-yellow':'c-red';
       const cardCls = isToday?'today':isTomorrow?'tomorrow':'';
       const strip   = pct>=100?'#22c55e':pct>=70?'#eab308':'#ef4444';
